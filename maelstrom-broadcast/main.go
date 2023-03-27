@@ -44,7 +44,7 @@ type MsgReqRead struct {
 type server struct {
 	n	*maelstrom.Node
 
-	messages	map[float64]struct{}
+	messages	[]float64
 	mLock sync.RWMutex
 
 	topology	map[string]interface{}
@@ -52,16 +52,16 @@ type server struct {
 
 
 
-func contains(s map[float64]struct{}, e float64) bool {
-    for key, _ := range s {
-        if key == e {
+func contains(s []float64, e float64) bool {
+    for _, a := range s {
+        if a == e {
             return true
         }
     }
     return false
 }
 
-func (s *server) broadcastAndWait(dest string, body MsgReqBroadcast) {
+func (s *server) broadcastAndWait(dest string, body map[string]any) {
 	maxRetries := 20
 	for i := 0; i < maxRetries; i++ {
 		ctx := context.Background()
@@ -77,7 +77,7 @@ func (s *server) broadcastAndWait(dest string, body MsgReqBroadcast) {
 
 
 func (s *server) broadcastHandler(msg maelstrom.Message) error {
-	var body MsgReqBroadcast
+	var body map[string]any
 	reply := new(MsgResp)
 
 	if err:=json.Unmarshal(msg.Body, &body); err != nil {
@@ -88,7 +88,7 @@ func (s *server) broadcastHandler(msg maelstrom.Message) error {
 		return err
 	}
 	
-	message:=body.Message
+	message:=body["message"].(float64)
 	
 	s.mLock.Lock()
 	isExisted := contains(s.messages, message)
@@ -99,7 +99,7 @@ func (s *server) broadcastHandler(msg maelstrom.Message) error {
 	}
 
 	s.mLock.Lock()
-	s.messages[body.Message] = struct{}{}
+	s.messages = append(s.messages, message)
 	s.mLock.Unlock()
 
 	var neighborhoods []interface{} = s.topology[s.n.ID()].([]interface{})
@@ -120,14 +120,8 @@ func (s *server) readHandler(msg maelstrom.Message) error {
 		return err
 	}
 
-	var responseMessages []float64
 	reply.Type = "read_ok"
-	s.mLock.Lock()
-	for key := range s.messages {
-		responseMessages = append(responseMessages, key)
-	}
-	reply.Messages = responseMessages
-	s.mLock.Unlock()
+	reply.Messages = s.messages
 
 	return s.n.Reply(msg, reply)
 }
